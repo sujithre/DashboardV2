@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Cost Dashboard</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .dashboard-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .dashboard-table th, .dashboard-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .dashboard-table th {
+            background-color: #f9fafb;
+            font-weight: 600;
+            text-align: left;
+        }
+        .total-row {
+            background-color: #f3f4f6;
+            font-weight: 600;
+        }
+        .trend-up {
+            color: #10b981;
+            font-size: 2rem;
+        }
+        .trend-down {
+            color: #ef4444;
+            font-size: 2rem;
+        }
+        .filter-container {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        }
+        .sidebar {
+            min-width: 300px;
+            width: 300px;
+            background-color: #1e293b;
+            color: white;
+            overflow-y: auto;
+        }
+        .sidebar-nav a {
+            display: block;
+            padding: 12px 20px;
+            color: #e2e8f0;
+            text-decoration: none;
+            border-bottom: 1px solid #334155;
+            transition: background-color 0.2s;
+        }
+        .sidebar-nav a:hover, .sidebar-nav a.active {
+            background-color: #334155;
+            color: white;
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .layout-container {
+            display: flex;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <!-- Hidden fields for initial data -->
+    <input type="hidden" id="initial-subscriptions-count" value="{{ subscriptionsCount }}">
+    <input type="hidden" id="initial-overall-cost" value="{{ overallCost.formatted_cost }}">
+    <input type="hidden" id="initial-last-refreshed-date" value="{{ lastRefreshedDate }}">
+    
+    <div id="app">
+        <div class="layout-container">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <!-- Sidebar Header -->
+                <div class="p-6 border-b border-gray-600">
+                    <div class="flex items-center">
+                        <i class="fas fa-cloud text-blue-400 text-2xl mr-3"></i>
+                        <div>
+                            <h1 class="text-xl font-bold text-white">Azure Cost Dashboard</h1>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <nav class="sidebar-nav">
+                    <a href="#" @click="currentView = 'overview'" :class="{ active: currentView === 'overview' }">
+                        <i class="fas fa-chart-pie mr-3"></i>Overview
+                    </a>
+                    <a href="#" @click="currentView = 'subscriptions'" :class="{ active: currentView === 'subscriptions' }">
+                        <i class="fas fa-list mr-3"></i>Subscriptions
+                    </a>
+                    <a href="#" @click="currentView = 'services'" :class="{ active: currentView === 'services' }">
+                        <i class="fas fa-cogs mr-3"></i>Services
+                    </a>
+                    <a href="#" @click="currentView = 'applications'" :class="{ active: currentView === 'applications' }">
+                        <i class="fas fa-apps mr-3"></i>Applications
+                    </a>
+                    <a href="#" @click="currentView = 'resources'" :class="{ active: currentView === 'resources' }">
+                        <i class="fas fa-server mr-3"></i>Resources
+                    </a>
+                </nav>
+
+                <!-- Filters in Sidebar -->
+                <div class="p-4 border-t border-gray-600">
+                    <h2 class="text-lg font-semibold mb-4 text-white">Filters</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Start Date</label>
+                            {% raw %}
+                            <input 
+                                type="date" 
+                                v-model="filters.startDate" 
+                                class="w-full p-2 border border-gray-300 rounded-md text-gray-900"
+                            >
+                            {% endraw %}
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">End Date</label>
+                            {% raw %}
+                            <input 
+                                type="date" 
+                                v-model="filters.endDate" 
+                                class="w-full p-2 border border-gray-300 rounded-md text-gray-900"
+                            >
+                            {% endraw %}
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Subscription ID</label>
+                            {% raw %}
+                            <select 
+                                v-model="filters.subscriptionId" 
+                                class="w-full p-2 border border-gray-300 rounded-md text-gray-900"
+                            >
+                                <option value="">All</option>
+                                <option v-for="id in filterOptions.subscriptionIds" :key="id" :value="id">
+                                    {{ id }}
+                                </option>
+                            </select>
+                            {% endraw %}
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Application</label>
+                            {% raw %}
+                            <select 
+                                v-model="filters.application" 
+                                class="w-full p-2 border border-gray-300 rounded-md text-gray-900"
+                            >
+                                <option value="">All</option>
+                                <option v-for="app in filterOptions.applications" :key="app" :value="app">
+                                    {{ app }}
+                                </option>
+                            </select>
+                            {% endraw %}
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Resource</label>
+                            {% raw %}
+                            <select 
+                                v-model="filters.resource" 
+                                class="w-full p-2 border border-gray-300 rounded-md text-gray-900"
+                            >
+                                <option value="">All</option>
+                                <option v-for="resource in filterOptions.resources" :key="resource" :value="resource">
+                                    {{ resource }}
+                                </option>
+                            </select>
+                            {% endraw %}
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Service Name</label>
+                            {% raw %}
+                            <select 
+                                v-model="filters.serviceName" 
+                                class="w-full p-2 border border-gray-300 rounded-md text-gray-900"
+                            >
+                                <option value="">All</option>
+                                <option v-for="name in filterOptions.serviceNames" :key="name" :value="name">
+                                    {{ name }}
+                                </option>
+                            </select>
+                            {% endraw %}
+                        </div>
+                        <div class="pt-2">
+                            <button 
+                                @click="applyFilters" 
+                                class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+                            >
+                                Apply Filters
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <!-- Dashboard Content -->
+                <div v-if="currentView === 'overview'">
+                    <!-- Header -->
+                    <div class="flex justify-between items-center mb-6 p-4 bg-white border border-gray-200 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fas fa-cloud text-blue-500 text-3xl mr-4"></i>
+                            <div>
+                                <h1 class="text-2xl font-bold text-blue-600">Azure Cost Dashboard</h1>
+                            </div>
+                        </div>                        <div class="text-right">                            <p class="text-sm text-gray-500">Last Refreshed Date</p>
+                            <p class="text-xl font-semibold">{{ lastRefreshedDate }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">                        <!-- Subscriptions Count Card -->
+                        <div class="p-4 bg-white dashboard-card">
+                            <h2 class="text-lg font-semibold mb-2 text-center">Count of Subscriptions</h2>                            <div class="text-center">
+                                <span class="block text-5xl font-bold text-red-500">{{ subscriptionsCount }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Overall Cost Card -->
+                        <div class="p-4 bg-white dashboard-card">
+                            <h2 class="text-lg font-semibold mb-2 text-center">Overall Cost</h2>                            <div class="flex justify-center items-center">
+                                <span class="text-5xl font-bold text-red-500">{{ overallCost.formatted_cost }}</span>
+                                <div class="trend-icon ml-4">
+                                    <i class="fas fa-arrow-up trend-up"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cost by Month Chart -->
+                    <div class="p-4 bg-white dashboard-card mb-6">
+                        <h2 class="text-lg font-semibold mb-2">Sum of Cost by StartDate</h2>
+                        <div style="height: 300px;">
+                            <canvas id="costByMonthChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Top 5 Tables -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <!-- Top 5 Subscriptions -->
+                        <div class="p-4 bg-white dashboard-card">
+                            <h2 class="text-lg font-semibold mb-2">Top 5 Subscriptions</h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full dashboard-table">
+                                    <thead>
+                                        <tr>
+                                            <th>SUBSCRIPTIONNAME</th>
+                                            <th>Sum of Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% raw %}
+                                        <tr v-for="(sub, index) in top5Subscriptions.data" :key="index">
+                                            <td>{{ safeValue(sub.SUBSCRIPTIONNAME) }}</td>
+                                            <td class="text-right">{{ formatNumber(sub.Cost) }}</td>
+                                        </tr>
+                                        <tr class="total-row">
+                                            <td>Total</td>
+                                            <td class="text-right">{{ formatNumber(top5Subscriptions.total) }}</td>
+                                        </tr>
+                                        {% endraw %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Top 5 Applications -->
+                        <div class="p-4 bg-white dashboard-card">
+                            <h2 class="text-lg font-semibold mb-2">Top 5 Applications</h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full dashboard-table">
+                                    <thead>
+                                        <tr>
+                                            <th>APPLICATION</th>
+                                            <th>Sum of Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% raw %}
+                                        <tr v-for="(app, index) in top5Applications.data" :key="index">
+                                            <td>{{ safeValue(app.APPLICATION) }}</td>
+                                            <td class="text-right">{{ formatNumber(app.Cost) }}</td>
+                                        </tr>
+                                        <tr class="total-row">
+                                            <td>Total</td>
+                                            <td class="text-right">{{ formatNumber(top5Applications.total) }}</td>
+                                        </tr>
+                                        {% endraw %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Top 5 Service Names -->
+                        <div class="p-4 bg-white dashboard-card">
+                            <h2 class="text-lg font-semibold mb-2">Top 5 Service Names</h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full dashboard-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ServiceName</th>
+                                            <th>Sum of Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% raw %}
+                                        <tr v-for="(service, index) in top5Services.data" :key="index">
+                                            <td>{{ safeValue(service.ServiceName) }}</td>
+                                            <td class="text-right">{{ formatNumber(service.Cost) }}</td>
+                                        </tr>
+                                        <tr class="total-row">
+                                            <td>Total</td>
+                                            <td class="text-right">{{ formatNumber(top5Services.total) }}</td>
+                                        </tr>
+                                        {% endraw %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Top 5 Resources -->
+                        <div class="p-4 bg-white dashboard-card">
+                            <h2 class="text-lg font-semibold mb-2">Top 5 Resources</h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full dashboard-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Resource</th>
+                                            <th>Sum of Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% raw %}
+                                        <tr v-for="(resource, index) in top5Resources.data" :key="index">
+                                            <td>{{ safeValue(resource.ResourceGroupName) }}</td>
+                                            <td class="text-right">{{ formatNumber(resource.Cost) }}</td>
+                                        </tr>
+                                        <tr class="total-row">
+                                            <td>Total</td>
+                                            <td class="text-right">{{ formatNumber(top5Resources.total) }}</td>
+                                        </tr>
+                                        {% endraw %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Vue app code -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

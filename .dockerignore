@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Node.js
+node_modules/
+npm-debug.log
+
+# Environment and local settings
+*.env
+.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test/
+playwright-report/
+playwright/.cache/

@@ -1,0 +1,17 @@
+{
+  "name": "azure-cost-dashboard",
+  "version": "1.0.0",
+  "description": "Azure Cost Dashboard with Flask and Vue.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test ui.test.ts",
+    "test:api": "playwright test api.test.ts",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.35.0",
+    "@types/node": "^20.2.5",
+    "typescript": "^5.1.3"
+  }
+}

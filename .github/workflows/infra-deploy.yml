@@ -1,0 +1,79 @@
+# This is a basic workflow to help you get started with Actions
+name: Infrastructure Deployment
+
+on:
+  push:
+    branches: [ dev ]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches: [ dev ]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - prod
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  TF_WORKSPACE: ${{ github.event.inputs.environment || 'dev' }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Init
+      run: terraform init
+      
+    - name: Set Environment Variables
+      run: |
+        # Set environment-specific variables
+        if ($env:TF_WORKSPACE -eq "prod") {
+          echo "TF_VAR_environment=prod" >> $env:GITHUB_ENV
+          echo "TF_VAR_location=westeurope" >> $env:GITHUB_ENV
+        } else {
+          echo "TF_VAR_environment=dev" >> $env:GITHUB_ENV
+          echo "TF_VAR_location=westeurope" >> $env:GITHUB_ENV
+        }
+
+    - name: Terraform Format
+      run: terraform fmt -check
+      continue-on-error: true
+
+    - name: Terraform Plan
+      run: terraform plan -out=tfplan
+      if: github.event_name == 'pull_request'
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve
+      if: (github.ref == 'refs/heads/dev' && github.event_name != 'pull_request') || github.event_name == 'workflow_dispatch'
+
+    - name: Get Terraform Outputs
+      if: success() && ((github.ref == 'refs/heads/dev' && github.event_name != 'pull_request') || github.event_name == 'workflow_dispatch')
+      id: terraform_outputs
+      run: |
+        echo "acr_login_server=$(terraform output -raw acr_login_server)" >> $env:GITHUB_ENV
+        echo "container_app_url=$(terraform output -raw container_app_url)" >> $env:GITHUB_ENV
