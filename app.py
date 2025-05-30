@@ -46,14 +46,29 @@ def load_data() -> List[Dict[str, Any]]:
     """
     data = []
     try:
+        import csv
         with open('Cosrdetails-Feb.csv', 'r', encoding='utf-8-sig') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                # Convert cost to float
-                row['Cost'] = parse_float(row['Cost'])
+                # Convert Cost to float
+                try:
+                    row['Cost'] = float(row['Cost'] if row['Cost'].strip() else 0)
+                except (ValueError, AttributeError):
+                    row['Cost'] = 0.0
                 
-                # Convert StartDate to datetime object
-                row['StartDate'] = parse_date(row['StartDate'])
+                # Parse date
+                try:
+                    if row.get('StartDate'):
+                        row['StartDate'] = datetime.strptime(row['StartDate'].strip(), '%Y-%m-%d')
+                    else:
+                        row['StartDate'] = None
+                except (ValueError, AttributeError):
+                    row['StartDate'] = None
+                
+                # Handle empty strings
+                for key in row:
+                    if isinstance(row[key], str):
+                        row[key] = row[key].strip() if row[key].strip() else None
                 
                 data.append(row)
         return data
@@ -79,14 +94,13 @@ def index():
     # Calculate overall cost
     total_cost = sum(row['Cost'] for row in data)
     if total_cost >= 1000000:
-        formatted_cost = f"{total_cost/1000000:.2f}M"
+        formatted_cost = f"${total_cost/1000000:.2f}M"
     else:
-        formatted_cost = f"{total_cost:.2f}"
+        formatted_cost = f"${total_cost:.2f}"
     overall_cost = {
         'cost': total_cost, 
         'formatted_cost': formatted_cost
     }
-    
     return render_template('index.html', 
                           lastRefreshedDate=last_refreshed_date,
                           subscriptionsCount=subscriptions_count, 
@@ -100,14 +114,23 @@ def top5_subscriptions():
     # Group by SubscriptionId and SUBSCRIPTIONNAME, sum the cost
     subscriptions = {}
     for row in data:
-        key = (row['SubscriptionId'], row['SUBSCRIPTIONNAME'])
-        if key not in subscriptions:
-            subscriptions[key] = {
-                'SubscriptionId': row['SubscriptionId'],
-                'SUBSCRIPTIONNAME': row['SUBSCRIPTIONNAME'],
+        subscription_id = row.get('SubscriptionId')
+        subscription_name = row.get('SUBSCRIPTIONNAME')
+        
+        # Skip if no subscription ID or if it's empty
+        if not subscription_id or (isinstance(subscription_id, str) and not subscription_id.strip()):
+            continue
+            
+        if subscription_id not in subscriptions:
+            # Ensure we have a clean subscription name
+            clean_name = subscription_name if subscription_name and isinstance(subscription_name, str) and subscription_name.strip() else 'Unknown'
+            
+            subscriptions[subscription_id] = {
+                'SubscriptionId': subscription_id,
+                'SUBSCRIPTIONNAME': clean_name,
                 'Cost': 0
             }
-        subscriptions[key]['Cost'] += row['Cost']
+        subscriptions[subscription_id]['Cost'] += float(row['Cost'] or 0)
     
     # Convert to list and sort by cost
     subscription_list = list(subscriptions.values())
@@ -340,6 +363,21 @@ def filter_options():
             'min': min_date,
             'max': max_date
         }
+    })
+
+@app.route('/api/cost-data')
+def cost_data():
+    """API endpoint for all cost data"""
+    data = load_data()
+    
+    # Convert datetime objects to strings for JSON serialization
+    for row in data:
+        if row['StartDate']:
+            row['StartDate'] = row['StartDate'].strftime('%Y-%m-%d')
+    
+    return jsonify({
+        'success': True,
+        'data': data
     })
 
 if __name__ == '__main__':
