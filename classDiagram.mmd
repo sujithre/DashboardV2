@@ -1,0 +1,49 @@
+classDiagram
+    class DataProcessor {
+        +load_data()
+        +process_subscriptions()
+        +process_applications()
+        +process_services()
+        +process_resources()
+        +aggregate_monthly_costs()
+    }
+
+    class FlaskBackend {
+        +index()
+        +top5_subscriptions()
+        +top5_applications()
+        +top5_service_names()
+        +top5_resources()
+        +sum_of_cost()
+        +overall_cost()
+        +filter_options()
+    }
+
+    class VueFrontend {
+        +data: Object
+        +mounted()
+        +loadData()
+        +processData()
+        +calculateTop5Subscriptions()
+        +calculateTop5Applications()
+        +calculateTop5Services()
+        +calculateTop5Resources()
+        +setupFilterOptions()
+        +applyFilters()
+        +createCostByMonthChart()
+    }
+
+    class CostData {
+        +SubscriptionId: string
+        +ServiceName: string
+        +ResourceGroupName: string
+        +Cost: number
+        +APPLICATION: string
+        +SUBSCRIPTIONNAME: string
+        +StartDate: date
+    }
+
+    FlaskBackend --> DataProcessor : uses
+    FlaskBackend --> CostData : processes
+    VueFrontend --> FlaskBackend : calls API
+    DataProcessor --> CostData : handles

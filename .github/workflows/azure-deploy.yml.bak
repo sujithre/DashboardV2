@@ -1,0 +1,75 @@
+name: Build and Deploy Application
+
+on:  workflow_run:
+    workflows: ["Infrastructure Deployment"]
+    branches: [DEV]
+    types:
+      - completed
+  pull_request:
+    branches: [DEV]
+    paths-ignore:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true        default: 'DEV'
+        type: choice
+        options:
+        - DEV
+        - PROD
+
+env:
+  CONTAINER_NAME: "novartis"  RESOURCE_GROUP: "rg-novartis-${{ github.event.inputs.environment || 'DEV' }}"
+  CONTAINER_APP_NAME: "ca-novartis-${{ github.event.inputs.environment || 'DEV' }}"
+  CONTAINER_APP_ENVIRONMENT: "cae-novartis-${{ github.event.inputs.environment || 'DEV' }}"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to ACR
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+        file: ./Dockerfile
+        
+    - name: Deploy to containerapp
+      if: github.event_name != 'pull_request'
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          az containerapp registry set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --username ${{ secrets.REGISTRY_USERNAME }} \
+            --password ${{ secrets.REGISTRY_PASSWORD }}
+            
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
